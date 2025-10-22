@@ -1,0 +1,15 @@
+test-temp/
+node_modules/
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.env
+.env.local
+coverage/
+dist/
+build/
+.qoder

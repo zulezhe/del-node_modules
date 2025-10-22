@@ -1,0 +1,37 @@
+{
+  "name": "dnm",
+  "version": "1.0.0",
+  "description": "Delete Node Modules - Recursively delete all node_modules directories under a specified path",
+  "main": "index.js",
+  "bin": {
+    "dnm": "./bin/cli.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test.js",
+    "prepare": "husky",
+    "precommit": "npm test"
+  },
+  "keywords": [
+    "node_modules",
+    "delete",
+    "cleanup",
+    "recursive",
+    "dnm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/dnm.git"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "cli-progress": "^3.12.0",
+    "inquirer": "^8.2.7",
+    "ora": "^9.0.0"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}
