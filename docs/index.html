@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dnm - Delete Node Modules</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗑️</text></svg>">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify-themeable@0/dist/css/theme-simple-dark.css">
+  <style>
+    :root {
+      --theme-color: #42b983;
+      --theme-color-dark: #3aa878;
+      --sidebar-width: 260px;
+    }
+    .lang-switch {
+      position: fixed;
+      top: 12px;
+      right: 16px;
+      z-index: 999;
+      background: var(--theme-color);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 12px;
+      cursor: pointer;
+      font-size: 14px;
+      opacity: 0.85;
+      transition: opacity 0.2s;
+    }
+    .lang-switch:hover { opacity: 1; }
+  </style>
+</head>
+<body>
+  <button class="lang-switch" id="langSwitch" onclick="switchLang()">中文</button>
+  <div id="app"></div>
+  <script>
+    var currentLang = localStorage.getItem('dnm-doc-lang') || 'en-US';
+
+    function switchLang() {
+      currentLang = currentLang === 'en-US' ? 'zh-CN' : 'en-US';
+      localStorage.setItem('dnm-doc-lang', currentLang);
+      location.href = '../docs/#/' + (currentLang === 'zh-CN' ? 'zh-CN/' : '');
+    }
+
+    function updateLangBtn() {
+      var btn = document.getElementById('langSwitch');
+      if (btn) btn.textContent = currentLang === 'en-US' ? '中文' : 'English';
+    }
+
+    window.$docsify = {
+      name: 'dnm',
+      nameLink: {
+        '/zh-CN/': '#/zh-CN/',
+        '/': '#/'
+      },
+      auto2top: true,
+      loadSidebar: function(path) {
+        var parts = path.split('/');
+        var lang = parts[parts.length - 2] || '';
+        if (lang === 'zh-CN') return '/zh-CN/_sidebar.md';
+        return '/_sidebar.md';
+      },
+      subMaxLevel: 3,
+      search: {
+        paths: 'auto',
+        placeholder: {
+          '/zh-CN/': '搜索',
+          '/': 'Search'
+        },
+        noData: {
+          '/zh-CN/': '没有结果',
+          '/': 'No results'
+        }
+      },
+      alias: {
+        '/.*/_sidebar.md': '/_sidebar.md'
+      },
+      routerMode: 'hash'
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/docsify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-javascript.min.js"></script>
+  <script>
+    updateLangBtn();
+  </script>
+</body>
+</html>
