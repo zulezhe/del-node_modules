@@ -17,29 +17,45 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node-version: [16.x, 18.x, 20.x]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-      
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
       - name: Install dependencies
-        run: npm ci
-      
+        run: pnpm install --frozen-lockfile
+
       - name: Run tests
-        run: npm test
-      
+        run: pnpm test
+
       - name: Test CLI help
         run: node bin/cli.js --help
-      
+
       - name: Test CLI version (Chinese)
         run: node bin/cli.js --help --lang zh-CN
-      
+
       - name: Test CLI version (English)
         run: node bin/cli.js --help --lang en-US
 
@@ -48,26 +64,31 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           registry-url: 'https://registry.npmjs.org'
-      
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Install dependencies
-        run: npm ci
-      
+        run: pnpm install --frozen-lockfile
+
       - name: Get version from package.json
         id: package_version
         run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-      
+
       - name: Check if tag exists
         id: check_tag
         run: |
@@ -76,7 +97,7 @@ jobs:
           else
             echo "TAG_EXISTS=false" >> $GITHUB_OUTPUT
           fi
-      
+
       - name: Create Git tag
         if: steps.check_tag.outputs.TAG_EXISTS == 'false'
         run: |
@@ -84,7 +105,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "v${{ steps.package_version.outputs.VERSION }}" -m "Release v${{ steps.package_version.outputs.VERSION }}"
           git push origin "v${{ steps.package_version.outputs.VERSION }}"
-      
+
       - name: Generate changelog
         if: steps.check_tag.outputs.TAG_EXISTS == 'false'
         id: changelog
@@ -98,7 +119,7 @@ jobs:
             echo "" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
           fi
-      
+
       - name: Create GitHub Release
         if: steps.check_tag.outputs.TAG_EXISTS == 'false'
         uses: softprops/action-gh-release@v1
@@ -107,15 +128,15 @@ jobs:
           name: Release v${{ steps.package_version.outputs.VERSION }}
           body: |
             ## 🚀 Release v${{ steps.package_version.outputs.VERSION }}
-            
+
             ### Changes
             ${{ steps.changelog.outputs.CHANGELOG }}
-            
+
             ### Installation
             ```bash
             npm install -g dnm@${{ steps.package_version.outputs.VERSION }}
             ```
-            
+
             ### Usage
             ```bash
             dnm --help
@@ -124,7 +145,7 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Publish to NPM
         if: steps.check_tag.outputs.TAG_EXISTS == 'false'
         run: npm publish
