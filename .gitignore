@@ -1,4 +1,5 @@
 test-temp/
+test-temp-rust*/
 node_modules/
 *.log
 .DS_Store
@@ -13,3 +14,11 @@ coverage/
 dist/
 build/
 .qoder
+
+# Rust
+target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+bin/dnm
+bin/dnm.exe
