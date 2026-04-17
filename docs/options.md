@@ -100,3 +100,11 @@ dnm -l debug --ignore backup --ignore temp
 # Silent mode with file logging only
 dnm --silent -f cleanup.log
 ```
+
+## Architecture Notes
+
+The CLI interface is powered by:
+- **Rust core**: All deletion and scanning logic
+- **Node.js wrapper**: Provides seamless NPM integration
+
+Both interfaces support the same options and maintain compatibility.

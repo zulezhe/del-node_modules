@@ -327,15 +327,25 @@ dnm/
 ├── js/                     # JS 包装器 | JS wrappers
 │   ├── wrapper.js         # Node.js 模块 | Node.js module
 │   └── cli.js             # CLI 包装器 | CLI wrapper
+├── bin/                    # 预编译二进制 | Pre-built binaries
+├── lib/                    # JS 工具库 | JS utilities
+│   ├── i18n.js            # 国际化（旧版）| i18n (legacy)
+│   └── logger.js          # 日志（旧版）| logger (legacy)
 ├── .github/
 │   └── workflows/
 │       └── ci-cd.yml      # CI/CD 配置 | CI/CD configuration
+├── .husky/
+│   └── pre-commit         # 预提交钩子 | Pre-commit hook
 ├── Cargo.toml             # Rust 配置 | Rust configuration
 ├── package.json           # NPM 配置 | NPM configuration
+├── index.js               # 主入口 | Main entry
+├── test.js                # Node.js 测试 | Node.js tests
 └── README.md              # 使用说明 | Usage guide
 ```
 
 ### 常用命令 | Common Commands
+
+#### Rust 开发 | Rust Development
 
 ```bash
 # 调试构建 | Debug build
@@ -348,12 +358,32 @@ cargo build --release
 cargo test
 
 # 运行程序 | Run program
-cargo run -- [选项]
+cargo run -- [options]
 
-# NPM 脚本 | NPM scripts
-npm run build          # 编译 Rust 二进制文件 | Build Rust binary
-npm run build:debug    # 调试构建 | Debug build
-npm test               # 运行测试 | Run tests
+# 格式化代码 | Format code
+cargo fmt
+
+# 代码检查 | Lint code
+cargo clippy
+```
+
+#### NPM 脚本 | NPM Scripts
+
+```bash
+# 编译 Rust 二进制文件 | Build Rust binary
+npm run build         
+
+# 调试构建 | Debug build
+npm run build:debug   
+
+# 复制二进制文件到 bin 目录 | Copy binary to bin
+npm run copy-binary
+
+# 运行测试 | Run tests
+npm test              
+
+# 安装依赖并构建 | Install and build
+npm install           
 ```
 
 ### Git 提交钩子 | Git Hooks
@@ -400,7 +430,10 @@ git commit -m "your message"
 2. **安全模式**: 建议使用默认的安全模式，确认后再删除
 3. **权限问题**: 某些目录可能需要管理员权限
 4. **备份建议**: 重要项目请先备份
-5. **系统要求**: 需要 Rust 1.70+ 或 Node.js 14+
+5. **系统要求**: 
+   - Rust 1.70+ (用于从源码构建)
+   - Node.js 14.0+ (用于 NPM 安装)
+   - 支持平台：Windows、macOS、Linux
 
 ---
 
