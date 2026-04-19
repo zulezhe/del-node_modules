@@ -2,7 +2,6 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use colored::*;
 use crate::i18n::I18n;
-use crate::utils::{format_bytes, get_directory_size};
 
 pub struct InteractiveOptions {
     pub target_path: PathBuf,
@@ -58,7 +57,7 @@ pub fn run_interactive_mode(i18n: &I18n) -> Option<InteractiveOptions> {
     };
 
     let safe_mode = prompt_confirm(&i18n.t("promptSafeMode", &[]), true);
-    let show_size = prompt_confirm(&i18n.t("promptShowSize", &[]), false);
+    let show_size = false; // Size calculation disabled for performance
     let show_progress = prompt_confirm(&i18n.t("promptShowProgress", &[]), true);
 
     println!("\n日志级别 / Log level:");
@@ -128,7 +127,7 @@ fn prompt_confirm(prompt: &str, default: bool) -> bool {
     }
 }
 
-pub fn show_safe_mode_list(found_paths: &[PathBuf], i18n: &I18n, show_size: bool) -> Option<Vec<PathBuf>> {
+pub fn show_safe_mode_list(found_paths: &[PathBuf], i18n: &I18n, _show_size: bool) -> Option<Vec<PathBuf>> {
     println!("\n{}", i18n.t("safeModeTitle", &[]).bold().cyan());
     println!("{}", "═══════════════════════════════════════════════════".cyan());
     println!();
@@ -136,17 +135,7 @@ pub fn show_safe_mode_list(found_paths: &[PathBuf], i18n: &I18n, show_size: bool
     for (index, path) in found_paths.iter().enumerate() {
         let index_str = format!("[{}]", index + 1).yellow();
         let path_str = path.to_string_lossy().cyan();
-        let size_str = if show_size {
-            let size = get_directory_size(path);
-            if size > 0 {
-                format!(" ({})", format_bytes(size)).dimmed().to_string()
-            } else {
-                String::new()
-            }
-        } else {
-            String::new()
-        };
-        println!("{} {}{}", index_str, path_str, size_str);
+        println!("{} {}", index_str, path_str);
     }
 
     println!();

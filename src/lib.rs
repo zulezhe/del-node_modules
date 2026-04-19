@@ -5,11 +5,14 @@ pub mod deleter;
 pub mod utils;
 pub mod interactive;
 pub mod cli;
+pub mod elevate;
 
 #[cfg(test)]
 mod tests;
 
 use std::path::Path;
+use std::sync::{Arc, Mutex};
+use rayon::prelude::*;
 use i18n::I18n;
 use logger::Logger;
 use scanner::Scanner;
@@ -80,7 +83,6 @@ pub fn find_and_delete_node_modules<P: AsRef<Path>>(target_path: P, options: Fin
         return Ok(DeletionResult {
             deleted_paths: Vec::new(),
             total: 0,
-            total_size: 0,
         });
     }
 
@@ -97,7 +99,6 @@ pub fn find_and_delete_node_modules<P: AsRef<Path>>(target_path: P, options: Fin
             return Ok(DeletionResult {
                 deleted_paths: Vec::new(),
                 total: 0,
-                total_size: 0,
             });
         }
     }
@@ -117,36 +118,36 @@ pub fn find_and_delete_node_modules<P: AsRef<Path>>(target_path: P, options: Fin
                 .progress_chars("█░"),
         );
         pb.set_message(i18n.t("starting", &[]));
-        Some(pb)
+        Some(Arc::new(pb))
     } else {
         None
     };
 
-    let mut deleted_paths = Vec::new();
-    let mut total_size: u64 = 0;
+    let deleted_paths = Arc::new(Mutex::new(Vec::new()));
+    let count = Arc::new(Mutex::new(0usize));
 
-    for (index, dir_path) in paths_to_delete.iter().enumerate() {
+    // Parallel deletion using rayon
+    paths_to_delete.par_iter().for_each(|dir_path| {
+        let success = deleter.delete_directory(dir_path);
+        if success {
+            deleted_paths.lock().unwrap().push(dir_path.clone());
+        }
+
         if let Some(ref pb) = progress_bar {
-            pb.set_position(index as u64);
+            let mut c = count.lock().unwrap();
+            *c += 1;
             let parent_name = dir_path.parent()
                 .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown");
+            pb.set_position(*c as u64);
             pb.set_message(i18n.t("deleting", &[("name", parent_name)]));
         }
+    });
 
-        let (success, size) = deleter.delete_directory(dir_path);
-        if success {
-            deleted_paths.push(dir_path.clone());
-            total_size += size;
-        }
+    let deleted_paths = Arc::try_unwrap(deleted_paths).unwrap().into_inner().unwrap();
 
-        if let Some(ref pb) = progress_bar {
-            pb.set_position((index + 1) as u64);
-        }
-    }
-
-    if let Some(ref pb) = progress_bar {
+    if let Some(pb) = progress_bar {
         pb.finish_with_message(i18n.t("complete", &[]));
         println!();
     }
@@ -156,16 +157,12 @@ pub fn find_and_delete_node_modules<P: AsRef<Path>>(target_path: P, options: Fin
         println!("{}", format!("                    {}                         ", i18n.t("summaryTitle", &[])).bold().green());
         println!("{}", "═══════════════════════════════════════════════════".bold().green());
         println!("{}", i18n.t("totalDeleted", &[("count", &deleted_paths.len().to_string().yellow().to_string())]));
-        if options.show_size && total_size > 0 {
-            println!("{}", i18n.t("totalSpaceFreed", &[("size", &utils::format_bytes(total_size).yellow().to_string())]));
-        }
         println!("{}", "═══════════════════════════════════════════════════\n".bold().green());
     }
 
     Ok(DeletionResult {
         deleted_paths: deleted_paths.clone(),
         total: deleted_paths.len(),
-        total_size,
     })
 }
 
@@ -177,6 +174,23 @@ pub fn run_cli() {
     let args = CliArgs::parse();
     let mut i18n = I18n::new(&args.lang);
 
+    // Handle elevation request
+    if args.elevate {
+        if elevate::is_elevated() {
+            println!("{}", i18n.t("alreadyAdmin", &[]).green());
+        } else {
+            println!("{}", i18n.t("elevating", &[]).yellow());
+            let all_args: Vec<String> = std::env::args().skip(1)
+                .filter(|a| a != "--elevate")
+                .collect();
+            if let Err(e) = elevate::elevate(&all_args) {
+                eprintln!("{}", i18n.t("elevateFailed", &[("error", &e)]).red());
+                std::process::exit(1);
+            }
+            // elevate() calls process::exit(0) on success, so we won't reach here
+        }
+    }
+
     if args.interactive {
         if let Some(opts) = run_interactive_mode(&i18n) {
             i18n = I18n::new("zh-CN");
@@ -187,7 +201,7 @@ pub fn run_cli() {
 
             let options = FindAndDeleteOptions {
                 show_progress: opts.show_progress,
-                show_size: opts.show_size,
+                show_size: false,
                 log_level: opts.log_level,
                 log_file: opts.log_file,
                 silent: false,
@@ -222,7 +236,7 @@ pub fn run_cli() {
 
         let options = FindAndDeleteOptions {
             show_progress: !args.no_progress,
-            show_size: args.size,
+            show_size: false,
             log_level: args.log_level.clone(),
             log_file: args.log_file.as_ref().map(|p| p.to_string_lossy().to_string()),
             silent: args.silent,

@@ -1,38 +1,35 @@
+/*
+ * @Author: 王超旭
+ * @Date: 2026-04-19 22:12:01
+ * @LastEditors: 王超旭
+ * @LastEditTime: 2026-04-20 00:00:32
+ * @Description: 
+ */
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use crate::logger::Logger;
 use crate::i18n::I18n;
-use crate::utils::{format_bytes, get_directory_size};
 
 pub struct Deleter {
     logger: Logger,
     i18n: I18n,
-    show_size: bool,
 }
 
 pub struct DeletionResult {
     pub deleted_paths: Vec<PathBuf>,
     pub total: usize,
-    pub total_size: u64,
 }
 
 impl Deleter {
-    pub fn new(logger: Logger, i18n: I18n, show_size: bool) -> Self {
+    pub fn new(logger: Logger, i18n: I18n, _show_size: bool) -> Self {
         Self {
             logger,
             i18n,
-            show_size,
         }
     }
 
-    pub fn delete_directory(&self, dir_path: &Path) -> (bool, u64) {
-        let size = if self.show_size {
-            get_directory_size(dir_path)
-        } else {
-            0
-        };
-
+    pub fn delete_directory(&self, dir_path: &Path) -> bool {
+        // Only get parent name for debug logging
         let parent_name = dir_path.parent()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
@@ -41,67 +38,31 @@ impl Deleter {
         let status = self.i18n.t("deleting", &[("name", parent_name)]);
         self.logger.debug(&status);
 
-        let success = self.delete_native(dir_path);
-
-        if success {
-            if self.show_size && size > 0 {
-                let size_str = format_bytes(size);
-                self.logger.success(&self.i18n.t("deletedWithSize", &[
-                    ("path", &dir_path.to_string_lossy()),
-                    ("size", &size_str),
-                ]));
-            } else {
+        match fs::remove_dir_all(dir_path) {
+            Ok(()) => {
                 self.logger.success(&self.i18n.t("deleted", &[("path", &dir_path.to_string_lossy())]));
+                true
             }
-            (true, size)
-        } else {
-            self.logger.warn(&self.i18n.t("errorDeleting", &[("path", &dir_path.to_string_lossy())]));
-            
-            let fallback_success = self.delete_fallback(dir_path);
-            if fallback_success {
-                if self.show_size && size > 0 {
-                    let size_str = format_bytes(size);
-                    self.logger.success(&self.i18n.t("deletedFallbackWithSize", &[
+            Err(e) => {
+                let error_msg = e.to_string();
+                // Fast permission check using error kind first
+                let is_permission_error = e.kind() == std::io::ErrorKind::PermissionDenied
+                    || error_msg.contains("Permission denied")
+                    || error_msg.contains("Access is denied")
+                    || error_msg.contains("拒绝访问");
+
+                if is_permission_error {
+                    self.logger.error(&self.i18n.t("permissionDenied", &[
                         ("path", &dir_path.to_string_lossy()),
-                        ("size", &size_str),
                     ]));
                 } else {
-                    self.logger.success(&self.i18n.t("deletedFallback", &[("path", &dir_path.to_string_lossy())]));
+                    self.logger.error(&self.i18n.t("failedDelete", &[
+                        ("path", &dir_path.to_string_lossy()),
+                        ("error", &error_msg),
+                    ]));
                 }
-                (true, size)
-            } else {
-                self.logger.error(&self.i18n.t("failedDelete", &[
-                    ("path", &dir_path.to_string_lossy()),
-                    ("error", &"All deletion methods failed".to_string()),
-                ]));
-                (false, 0)
+                false
             }
         }
-    }
-
-    fn delete_native(&self, dir_path: &Path) -> bool {
-        if cfg!(windows) {
-            let output = Command::new("cmd")
-                .args(["/C", &format!("rd /s /q \"{}\"", dir_path.display())])
-                .output();
-            
-            match output {
-                Ok(output) => output.status.success(),
-                Err(_) => false,
-            }
-        } else {
-            let output = Command::new("sh")
-                .args(["-c", &format!("rm -rf \"{}\"", dir_path.display())])
-                .output();
-            
-            match output {
-                Ok(output) => output.status.success(),
-                Err(_) => false,
-            }
-        }
-    }
-
-    fn delete_fallback(&self, dir_path: &Path) -> bool {
-        fs::remove_dir_all(dir_path).is_ok()
     }
 }

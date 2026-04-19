@@ -1,37 +1,67 @@
+/*
+ * @Author: 王超旭
+ * @Date: 2026-04-19 20:19:38
+ * @LastEditors: 王超旭
+ * @LastEditTime: 2026-04-19 23:53:29
+ * @Description: 
+ */
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 pub fn format_bytes(bytes: u64) -> String {
     if bytes == 0 {
         return "0 Bytes".to_string();
     }
     
-    let k = 1024.0;
-    let sizes = ["Bytes", "KB", "MB", "GB"];
-    let i = (bytes as f64).log(k).floor() as usize;
-    let i = i.min(sizes.len() - 1);
+    const K: f64 = 1024.0;
+    const SIZES: &[&str] = &["Bytes", "KB", "MB", "GB"];
+    let i = (bytes as f64).log(K).floor() as usize;
+    let i = i.min(SIZES.len() - 1);
     
-    let size = bytes as f64 / k.powi(i as i32);
-    format!("{:.2} {}", size, sizes[i])
+    let size = bytes as f64 / K.powi(i as i32);
+    format!("{:.2} {}", size, SIZES[i])
 }
 
 pub fn get_directory_size(dir_path: &Path) -> u64 {
-    let mut size = 0;
+    let total_size = Arc::new(AtomicU64::new(0));
     
-    if let Ok(entries) = fs::read_dir(dir_path) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Ok(metadata) = entry.metadata() {
-                if metadata.is_dir() {
-                    size += get_directory_size(&path);
-                } else {
-                    size += metadata.len();
+    // Collect entries first
+    let entries: Vec<_> = fs::read_dir(dir_path)
+        .map(|e| e.filter_map(|entry| entry.ok()).collect())
+        .unwrap_or_default();
+    
+    // Process entries in parallel using rayon
+    use rayon::prelude::*;
+    entries.par_iter().for_each(|entry| {
+        let path = entry.path();
+        
+        // Use file_type() for better performance
+        match entry.file_type() {
+            Ok(ft) => {
+                if ft.is_dir() {
+                    total_size.fetch_add(get_directory_size(&path), Ordering::Relaxed);
+                } else if ft.is_file() {
+                    if let Ok(metadata) = entry.metadata() {
+                        total_size.fetch_add(metadata.len(), Ordering::Relaxed);
+                    }
+                }
+            }
+            Err(_) => {
+                // Fallback to metadata() if file_type() fails
+                if let Ok(metadata) = entry.metadata() {
+                    if metadata.is_dir() {
+                        total_size.fetch_add(get_directory_size(&path), Ordering::Relaxed);
+                    } else if metadata.is_file() {
+                        total_size.fetch_add(metadata.len(), Ordering::Relaxed);
+                    }
                 }
             }
         }
-    }
+    });
     
-    size
+    total_size.load(Ordering::Relaxed)
 }
 
 pub fn should_ignore(dir_path: &Path, target_path: &Path, ignore_dirs: &[String]) -> bool {

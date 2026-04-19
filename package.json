@@ -29,7 +29,6 @@
     "type": "git",
     "url": "https://github.com/yourusername/dnm.git"
   },
-  "devDependencies": {},
   "engines": {
     "node": ">=14.0.0"
   }

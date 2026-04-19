@@ -45,6 +45,10 @@ pub struct CliArgs {
     /// Disable safe mode (delete without confirmation)
     #[arg(long)]
     pub no_safe: bool,
+
+    /// Run with administrator/elevated privileges
+    #[arg(long)]
+    pub elevate: bool,
 }
 
 impl CliArgs {
