@@ -264,15 +264,7 @@ pub fn run_cli() -> i32 {
                     }
                 }
 
-                // Ask if user wants to continue
-                use std::io::{self, Write};
-                print!("\n{} [y/N] ", i18n.t("promptContinue", &[]));
-                let _ = io::stdout().flush();
-                let mut input = String::new();
-                io::stdin().read_line(&mut input).ok();
-                if matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
-                    continue_loop = true;
-                }
+                continue_loop = true;
             }
         }
         0
