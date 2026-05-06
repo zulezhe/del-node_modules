@@ -127,6 +127,8 @@ impl I18n {
                 translations.insert("pathColumn".to_string(), "路径".to_string());
                 translations.insert("sizeColumn".to_string(), "大小".to_string());
                 translations.insert("directoriesWord".to_string(), "个目录".to_string());
+                translations.insert("guiAutoInteractive".to_string(), "检测到图形界面启动，自动进入交互模式".to_string());
+                translations.insert("promptContinue".to_string(), "是否继续清理其他目录？".to_string());
             }
             _ => {
                 translations.insert("scanning".to_string(), "Scanning {path} for node_modules directories...".to_string());
@@ -200,6 +202,8 @@ impl I18n {
                 translations.insert("pathColumn".to_string(), "Path".to_string());
                 translations.insert("sizeColumn".to_string(), "Size".to_string());
                 translations.insert("directoriesWord".to_string(), "directories".to_string());
+                translations.insert("guiAutoInteractive".to_string(), "GUI launch detected, entering interactive mode".to_string());
+                translations.insert("promptContinue".to_string(), "Clean another directory?".to_string());
             }
         }
 

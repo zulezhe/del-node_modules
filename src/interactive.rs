@@ -11,19 +11,40 @@ pub struct InteractiveOptions {
     pub log_file: Option<String>,
     pub ignore_dirs: Vec<String>,
     pub safe_mode: bool,
+    pub language: String,
 }
 
-pub fn run_interactive_mode(i18n: &I18n) -> Option<InteractiveOptions> {
-    println!("\n{}", i18n.t("interactiveTitle", &[]).bold().cyan());
+fn detect_system_language() -> &'static str {
+    // Check LANG env var (Unix/Linux/macOS/WSL)
+    if let Ok(lang) = std::env::var("LANG") {
+        if lang.to_lowercase().starts_with("zh") {
+            return "zh-CN";
+        }
+    }
 
-    println!("\n[1] 简体中文 (zh-CN)");
-    println!("[2] English (en-US)");
-    let lang_input = prompt_input("选择语言 / Select language: ")?;
-    let language = match lang_input.trim() {
-        "2" => "en-US",
-        _ => "zh-CN",
-    };
+    // On Windows, use system UI language API
+    #[cfg(target_os = "windows")]
+    {
+        unsafe {
+            extern "system" {
+                fn GetUserDefaultUILanguage() -> u16;
+            }
+            let lang_id = GetUserDefaultUILanguage();
+            // Chinese: primary lang ID 0x04
+            if (lang_id & 0xFF) == 0x04 {
+                return "zh-CN";
+            }
+        }
+    }
+
+    "zh-CN"
+}
+
+pub fn run_interactive_mode(_i18n: &I18n) -> Option<InteractiveOptions> {
+    let language = detect_system_language();
     let i18n = I18n::new(language);
+
+    println!("\n{}", i18n.t("interactiveTitle", &[]).bold().cyan());
 
     let default_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let target_path = loop {
@@ -46,65 +67,15 @@ pub fn run_interactive_mode(i18n: &I18n) -> Option<InteractiveOptions> {
         break path.canonicalize().unwrap_or(path);
     };
 
-    let ignore_input = prompt_input(&i18n.t("promptIgnoreDirs", &[])).unwrap_or_default();
-    let ignore_dirs: Vec<String> = if ignore_input.trim().is_empty() {
-        Vec::new()
-    } else {
-        ignore_input.split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    };
-
-    let safe_mode = prompt_confirm(&i18n.t("promptSafeMode", &[]), true);
-    let show_size = false; // Size calculation disabled for performance
-    let show_progress = prompt_confirm(&i18n.t("promptShowProgress", &[]), true);
-
-    println!("\n日志级别 / Log level:");
-    println!("[1] debug");
-    println!("[2] info");
-    println!("[3] warn");
-    println!("[4] error");
-    let log_level_input = prompt_input(&i18n.t("promptLogLevel", &[])).unwrap_or_else(|| "2".to_string());
-    let log_level = match log_level_input.trim() {
-        "1" => "debug",
-        "2" => "info",
-        "3" => "warn",
-        "4" => "error",
-        _ => "info",
-    }.to_string();
-
-    let use_log_file = prompt_confirm(&i18n.t("promptUseLogFile", &[]), false);
-    let log_file = if use_log_file {
-        let input = prompt_input(&i18n.t("promptLogFile", &[])).unwrap_or_else(|| "del-node-modules.log".to_string());
-        Some(if input.is_empty() { "del-node-modules.log".to_string() } else { input })
-    } else {
-        None
-    };
-
-    println!("\n{}", format!("{} {}", i18n.t("targetDirectory", &[]), target_path.display()).cyan());
-    println!("  Ignore: {}", if ignore_dirs.is_empty() { "None".to_string() } else { ignore_dirs.join(", ") }.cyan());
-    println!("  Safe Mode: {}", if safe_mode { "Yes".to_string() } else { "No".to_string() }.cyan());
-    println!("  Show Size: {}", if show_size { "Yes".to_string() } else { "No".to_string() }.cyan());
-    println!("  Log Level: {}", log_level.cyan());
-    if let Some(ref log) = log_file {
-        println!("  Log File: {}", log.cyan());
-    }
-    println!();
-
-    if !prompt_confirm(&i18n.t("promptProceed", &[]), false) {
-        println!("\n{}", i18n.t("operationCancelled", &[]).red());
-        return None;
-    }
-
     Some(InteractiveOptions {
         target_path,
-        show_size,
-        show_progress,
-        log_level,
-        log_file,
-        ignore_dirs,
-        safe_mode,
+        show_size: false,
+        show_progress: true,
+        log_level: "info".to_string(),
+        log_file: None,
+        ignore_dirs: Vec::new(),
+        safe_mode: true,
+        language: language.to_string(),
     })
 }
 
@@ -114,17 +85,6 @@ fn prompt_input(prompt: &str) -> Option<String> {
     let mut input = String::new();
     io::stdin().read_line(&mut input).ok()?;
     Some(input.trim().to_string())
-}
-
-fn prompt_confirm(prompt: &str, default: bool) -> bool {
-    let default_str = if default { "Y/n" } else { "y/N" };
-    let input = prompt_input(&format!("{} [{}]", prompt, default_str)).unwrap_or_default();
-    
-    if input.is_empty() {
-        default
-    } else {
-        matches!(input.to_lowercase().as_str(), "y" | "yes")
-    }
 }
 
 pub fn show_safe_mode_list(found_paths: &[PathBuf], i18n: &I18n, _show_size: bool) -> Option<Vec<PathBuf>> {

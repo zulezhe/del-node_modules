@@ -2,14 +2,13 @@ name: CI/CD
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, '*' ]
   pull_request:
     branches: [ main, develop ]
 
 env:
   CARGO_TERM_COLOR: always
-  NODE_VERSION: '18'
-  RUST_VERSION: '1.70'
+  NODE_VERSION: '20'
 
 jobs:
   # ==================== 测试阶段 ====================
@@ -17,127 +16,133 @@ jobs:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-    
+
     steps:
     - uses: actions/checkout@v4
 
-    # 设置 Rust
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: ${{ env.RUST_VERSION }}
 
-    # 设置 Node.js
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
 
-    # 缓存依赖
     - name: Cache Rust dependencies
       uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ matrix.os }}
 
-    # 安装依赖
     - name: Install dependencies
       run: npm ci
 
-    # 运行 Rust 测试
     - name: Run Rust tests
       run: cargo test --verbose
 
-    # 编译发布版本
     - name: Build release
       run: cargo build --release
 
-    # 复制二进制文件
-    - name: Copy binary
-      run: npm run copy-binary
-
-    # 运行 JS 测试
     - name: Run JS tests
       run: npm test
 
-  # ==================== 发布阶段 ====================
-  release:
-    name: Release
+  # ==================== 打包构建产物 ====================
+  package:
+    name: Package (${{ matrix.config.name }})
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
-    
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Get version from package.json
-      id: get_version
-      run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: v${{ steps.get_version.outputs.version }}
-        name: Release v${{ steps.get_version.outputs.version }}
-        draft: false
-        prerelease: false
-        generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ==================== 交叉编译 ====================
-  build-binaries:
-    name: Build Binary (${{ matrix.target }})
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.config.os }}
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
+        config:
+          - name: Linux-x86_64
+            os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: dnm
-          - os: windows-latest
+            artifact: dnm-linux-x86_64
+          - name: Windows-x86_64
+            os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: dnm.exe
-          - os: macos-latest
+            artifact: dnm-windows-x86_64.exe
+          - name: macOS-x86_64
+            os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: dnm
-          - os: macos-latest
+            artifact: dnm-macos-x86_64
+          - name: macOS-aarch64
+            os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: dnm
-    
+            artifact: dnm-macos-aarch64
+
     steps:
     - uses: actions/checkout@v4
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        targets: ${{ matrix.target }}
+        targets: ${{ matrix.config.target }}
 
     - name: Cache Rust dependencies
       uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ matrix.config.name }}
 
     - name: Build release
-      run: cargo build --release --target ${{ matrix.target }}
+      run: cargo build --release --target ${{ matrix.config.target }}
 
-    - name: Upload binary to release
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.config.artifact }}
+        path: target/${{ matrix.config.target }}/release/${{ matrix.config.artifact }}
+        retention-days: 30
+        if-no-files-found: error
+
+  # ==================== 发布 GitHub Release ====================
+  release:
+    name: Release
+    needs: package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Get version
+      id: version
+      run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        merge-multiple: false
+
+    - name: List artifacts
+      run: find artifacts -type f | head -20
+
+    - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        files: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
-        tag_name: v${{ needs.release.outputs.version }}
+        tag_name: v${{ steps.version.outputs.version }}
+        name: Release v${{ steps.version.outputs.version }}
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        files: artifacts/**
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ==================== 发布到 NPM ====================
   publish-npm:
     name: Publish to NPM
-    needs: [release, build-binaries]
+    needs: release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
 
@@ -146,11 +151,13 @@ jobs:
       with:
         node-version: ${{ env.NODE_VERSION }}
         registry-url: 'https://registry.npmjs.org'
+        cache: 'npm'
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: ${{ env.RUST_VERSION }}
+
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
 
     - name: Install dependencies
       run: npm ci

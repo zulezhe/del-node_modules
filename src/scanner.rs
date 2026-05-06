@@ -31,12 +31,13 @@ impl Scanner {
         let ignore_dirs = Arc::new(self.ignore_dirs.clone());
         let target_path = Arc::new(canonical_path.clone());
 
-        // Collect top-level subdirectories for parallel scanning
+        // Collect top-level subdirectories for parallel scanning (skip node_modules)
         let subdirs: Vec<PathBuf> = fs::read_dir(&canonical_path)
             .map(|entries| {
                 entries
                     .filter_map(|e| e.ok())
                     .filter(|e| e.path().is_dir())
+                    .filter(|e| e.file_name() != "node_modules")
                     .map(|e| e.path())
                     .collect()
             })

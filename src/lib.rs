@@ -21,6 +21,26 @@ use interactive::show_safe_mode_list;
 use indicatif::ProgressBar;
 use colored::*;
 
+/// On Windows, detect if the console was created for this process (i.e., double-clicked).
+/// GetConsoleProcessList returns the number of processes attached to the console.
+/// If it returns 1, only our process uses the console → double-clicked.
+#[cfg(target_os = "windows")]
+pub fn is_gui_console() -> bool {
+    unsafe {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetConsoleProcessList(lpdwProcessList: *mut u32, dwProcessCount: u32) -> u32;
+        }
+        let mut count = 0u32;
+        GetConsoleProcessList(&mut count, 1) <= 1
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn is_gui_console() -> bool {
+    false
+}
+
 pub struct FindAndDeleteOptions {
     pub show_progress: bool,
     pub show_size: bool,
@@ -166,13 +186,30 @@ pub fn find_and_delete_node_modules<P: AsRef<Path>>(target_path: P, options: Fin
     })
 }
 
-pub fn run_cli() {
+pub fn run_cli() -> i32 {
     use clap::Parser;
     use cli::CliArgs;
     use interactive::run_interactive_mode;
 
-    let args = CliArgs::parse();
+    let args = match CliArgs::try_parse() {
+        Ok(args) => args,
+        Err(e) => {
+            // Handle --help, --version, and parse errors without calling process::exit
+            e.print().ok();
+            return match e.use_stderr() {
+                true => 1,
+                false => 0,
+            };
+        }
+    };
     let mut i18n = I18n::new(&args.lang);
+
+    // Auto-enter interactive mode when double-clicked without arguments
+    let mut args = args;
+    if is_gui_console() && args.target_path.is_none() && !args.interactive {
+        println!("{}", i18n.t("guiAutoInteractive", &[]).yellow());
+        args.interactive = true;
+    }
 
     // Handle elevation request
     if args.elevate {
@@ -185,47 +222,60 @@ pub fn run_cli() {
                 .collect();
             if let Err(e) = elevate::elevate(&all_args) {
                 eprintln!("{}", i18n.t("elevateFailed", &[("error", &e)]).red());
-                std::process::exit(1);
+                return 1;
             }
             // elevate() calls process::exit(0) on success, so we won't reach here
+            unreachable!()
         }
     }
 
     if args.interactive {
-        if let Some(opts) = run_interactive_mode(&i18n) {
-            i18n = I18n::new("zh-CN");
-            
-            println!("\n{}", "╔════════════════════════════════════════════════╗".bold().magenta());
-            println!("{}", "║     🗑️  dnm - 清理工具                        ║".bold().magenta());
-            println!("{}", "╚════════════════════════════════════════════════╝\n".bold().magenta());
+        let mut continue_loop = true;
+        while continue_loop {
+            continue_loop = false;
+            if let Some(opts) = run_interactive_mode(&i18n) {
+                i18n = I18n::new(&opts.language);
 
-            let options = FindAndDeleteOptions {
-                show_progress: opts.show_progress,
-                show_size: false,
-                log_level: opts.log_level,
-                log_file: opts.log_file,
-                silent: false,
-                ignore: opts.ignore_dirs,
-                safe_mode: opts.safe_mode,
-                language: "zh-CN".to_string(),
-            };
+                println!("\n{}", "╔════════════════════════════════════════════════╗".bold().magenta());
+                println!("{}", "║     🗑️  dnm - 清理工具                        ║".bold().magenta());
+                println!("{}", "╚════════════════════════════════════════════════╝\n".bold().magenta());
 
-            match find_and_delete_node_modules(&opts.target_path, options) {
-                Ok(result) => {
-                    if result.total > 0 {
-                        println!("{}", i18n.t("cleanupSuccess", &[]).bold().green());
-                    } else {
-                        println!("{}", i18n.t("nothingToCleanup", &[]).yellow());
+                let options = FindAndDeleteOptions {
+                    show_progress: opts.show_progress,
+                    show_size: false,
+                    log_level: opts.log_level,
+                    log_file: opts.log_file,
+                    silent: false,
+                    ignore: opts.ignore_dirs,
+                    safe_mode: opts.safe_mode,
+                    language: opts.language.clone(),
+                };
+
+                match find_and_delete_node_modules(&opts.target_path, options) {
+                    Ok(result) => {
+                        if result.total > 0 {
+                            println!("{}", i18n.t("cleanupSuccess", &[]).bold().green());
+                        } else {
+                            println!("{}", i18n.t("nothingToCleanup", &[]).yellow());
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{}", i18n.t("error", &[("message", &e)]).bold().red());
                     }
                 }
-                Err(e) => {
-                    eprintln!("{}", i18n.t("error", &[("message", &e)]).bold().red());
-                    std::process::exit(1);
+
+                // Ask if user wants to continue
+                use std::io::{self, Write};
+                print!("\n{} [y/N] ", i18n.t("promptContinue", &[]));
+                let _ = io::stdout().flush();
+                let mut input = String::new();
+                io::stdin().read_line(&mut input).ok();
+                if matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
+                    continue_loop = true;
                 }
             }
-        } else {
-            std::process::exit(0);
         }
+        0
     } else {
         println!("\n{}", "╔════════════════════════════════════════════════╗".bold().magenta());
         println!("{}", "║     🗑️  dnm - 清理工具                        ║".bold().magenta());
@@ -254,10 +304,11 @@ pub fn run_cli() {
                 } else {
                     println!("{}", i18n.t("nothingToCleanup", &[]).yellow());
                 }
+                0
             }
             Err(e) => {
                 eprintln!("{}", i18n.t("error", &[("message", &e)]).bold().red());
-                std::process::exit(1);
+                1
             }
         }
     }
